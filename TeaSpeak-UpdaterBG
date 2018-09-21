@@ -1,0 +1,137 @@
+#!/bin/bash
+#TeaSpeak updater by Nicer
+#Tested on Debian
+#Translated by Petar Milenov
+
+#color codes from https://raw.githubusercontent.com/Sporesirius/TeaSpeak-Installer/master/teaspeak_install.sh
+function warn() {
+    echo -e "\\033[33;1m${@}\033[0m"
+}
+
+function error() {
+    echo -e "\\033[31;1m${@}\033[0m"
+}
+
+function info() {
+    echo -e "\\033[36;1m${@}\033[0m"
+}
+
+function green() {
+    echo -e "\\033[32;1m${@}\033[0m"
+}
+
+function cyan() {
+    echo -e "\\033[36;1m${@}\033[0m"
+}
+
+function red() {
+    echo -e "\\033[31;1m${@}\033[0m"
+}
+
+function yellow() {
+    echo -e "\\033[33;1m${@}\033[0m"
+}
+
+
+#checking for parameters
+POSITIONAL=()
+while [[ $# -gt 0 ]]
+do
+key="$1"
+
+case $key in
+    -f|--force)
+    FORCE="TRUE"
+    shift # past argument
+    ;;
+    -p|--path)
+    FOLDER="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    -s|--start)
+    START="$2"
+    shift # past argument
+    shift # past value
+    if [[ -z $START ]]
+    then
+      START="teastart.sh start"
+    fi
+    ;;
+    *)    # unknown option
+    POSITIONAL+=("$1") # save it in an array for later
+    shift # past argument
+    ;;
+esac
+done
+set -- "${POSITIONAL[@]}" # restore positional parameters
+
+#main
+if [ -z "$FOLDER" ]
+then
+        FOLDER="$(dirname "$(readlink -f "$0")")"
+else
+        if [[ $FOLDER == */ ]]
+        then
+            FOLDER=${FOLDER:0:(-1)}
+        fi
+fi
+
+if [ ! -f "$FOLDER/buildVersion.txt" ] 
+then
+	error "buildVersion.txt не е намерен, прекратяване на обновяването!";
+	exit 1;
+fi
+
+if [[ "$(uname -m)" == "x86_64" ]];
+then
+    arch="amd64"
+else
+    arch="x86"
+fi
+
+latest_version=$(curl -k --silent https://repo.teaspeak.de/server/linux/$arch/latest)
+current_version=$(head -n 1 "$FOLDER/buildVersion.txt")
+current_version=${current_version:11}
+
+if [[ "$latest_version" == "$current_version" ]];
+then
+   green "Вече използвате най новата версия на TeaSpeak. Прекратяване на обновяването :)";
+   exit 0;
+fi
+
+if [[ -z $FORCE ]];
+then
+	read -n 1 -r -s -p "$(yellow Има нова налична версия, желаете ли да продължите? [y/n])"
+	echo
+	if [[ ! $REPLY =~ ^[Yy]$ ]];
+	then
+		error "Прекратяване на обновяването"
+		exit 0;
+	fi
+else
+	info "Новата версия е намерена ($latest_version), стартиране на обновяването"
+fi
+
+info "Проверка на за работещ сървър..."
+if [[ $($FOLDER/teastart.sh status) == "Сървърът работи" ]];
+then
+	info "Все още има работещ сървър! Изключване..."
+	$FOLDER/teastart.sh stop
+fi
+info "Създаване на резервно копие на стартия сървър като TeaSpeakBackup_$current_version.tar.gz"
+tar -C $FOLDER/ -zcvf TeaSpeakBackup_$current_version.tar.gz config.yml TeaData.sqlite --overwrite >/dev/null
+info "Сваляне на последната налична версия $latest_version";
+wget -q -O /tmp/TeaSpeak.tar.gz https://repo.teaspeak.de/server/linux/$arch/TeaSpeak-$latest_version.tar.gz;
+info "Разархивиране в $FOLDER/";
+tar -C $FOLDER/ -xzf /tmp/TeaSpeak.tar.gz --overwrite
+info "Премахване на временните файлове";
+rm /tmp/TeaSpeak.tar.gz
+green "Обновяването завърши успешно!";
+
+if [[ ! -z $START ]]
+then
+  info "Стартиране на сървъра";
+  $FOLDER/$START;
+fi
+exit 0;
